@@ -1,0 +1,33 @@
+# Model profiles. Selectors are Otari model ids: `vendor/model` lets Otari pick a priced
+# provider, `provider:model` pins one, and a plain name like `committee-judge` is an Otari
+# routing policy. Check what your gateway serves with `python -m committee doctor`.
+#
+# Slots: analyst (fundamental, technical, events), debater (bull, bear), judge, risk.
+# `fallbacks` is the client-side chain, tried after Otari's own routing gives up.
+
+[rules]
+description = "No LLM: deterministic scores on the same features (baseline, $0)"
+
+[open]
+description = "Open-weight models from four labs, one per job (DeepSeek, Zhipu, Alibaba, Mistral)"
+knowledge_cutoff = "2026-03-31"
+models = { analyst = "deepseek/deepseek-v4.1-flash", debater = "z-ai/glm-5.3-flash", judge = "deepseek/deepseek-v4-pro", risk = "alibaba/qwen3.8-flash" }
+fallbacks = { analyst = ["alibaba/qwen3.8-flash"], debater = ["mistralai/mistral-small-4"], judge = ["moonshotai/kimi-k3-fast"], risk = ["mistralai/mistral-small-4"] }
+economy_judge = "alibaba/qwen3.8-flash"
+
+[otari]
+description = "Same seats, routed by Otari routing policies (failover inside the gateway)"
+knowledge_cutoff = "2026-03-31"
+models = { analyst = "committee-analyst", debater = "committee-debater", judge = "committee-judge", risk = "committee-risk" }
+fallbacks = { analyst = ["deepseek/deepseek-v4.1-flash"], debater = ["z-ai/glm-5.3-flash"], judge = ["deepseek/deepseek-v4-pro"], risk = ["alibaba/qwen3.8-flash"] }
+economy_judge = "alibaba/qwen3.8-flash"
+
+[frontier]
+description = "Closed frontier model in every seat (comparison only)"
+knowledge_cutoff = "2026-03-31"
+models = { analyst = "anthropic/claude-fable-5", debater = "anthropic/claude-fable-5", judge = "anthropic/claude-fable-5", risk = "anthropic/claude-fable-5" }
+fallbacks = { judge = ["google/gemini-3.1-pro"] }
+
+[local]
+description = "Local model in LM Studio, served through a self-hosted Otari"
+models = { analyst = "lmstudio:qwen2.5-7b-instruct", debater = "lmstudio:qwen2.5-7b-instruct", judge = "lmstudio:qwen2.5-7b-instruct", risk = "lmstudio:qwen2.5-7b-instruct" }

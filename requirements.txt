@@ -1,0 +1,10 @@
+openai>=1.40
+pydantic>=2.6
+pandas>=2.1
+numpy>=1.26
+yfinance>=0.2.50
+requests>=2.31
+python-dotenv>=1.0
+matplotlib>=3.8
+streamlit>=1.35
+pytest>=8
