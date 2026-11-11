@@ -87,7 +87,7 @@ def cmd_backtest(a):
                   f"{'is on' if not a.no_anonymize else 'is OFF'}.")
     data = MarketData(start=(start - timedelta(days=420)).isoformat(), end=(end + timedelta(days=10)).isoformat())
     bt = Backtester(BacktestConfig(universe, start, end, tc_bps=a.tc_bps, workers=a.workers,
-                                   anonymize=not a.no_anonymize), data)
+                                   anonymize=not a.no_anonymize, construction=a.construction, top_k=a.top_k), data)
     n = bt.n_decisions()
     llm_names = [x for x in names if profiles[x].uses_llm]
     calls = n * 7 * len(llm_names)
@@ -102,7 +102,8 @@ def cmd_backtest(a):
     out = ROOT / "runs" / run_id
     table = write_run(out, bt, results, ledger, {"run_id": run_id, "universe": universe, "start": start, "end": end,
                                                  "profiles": names, "anonymize": not a.no_anonymize,
-                                                 "tc_bps": a.tc_bps})
+                                                 "tc_bps": a.tc_bps, "construction": a.construction,
+                                                 "top_k": a.top_k})
     from .report import write_report
     write_report(out)
     cols = [c for c in ["total_return", "sharpe", "max_drawdown", "mean_ic", "buy_hit_rate", "llm_cost_usd",
@@ -137,6 +138,9 @@ def main(argv=None):
     s.add_argument("--tc-bps", type=float, default=5.0)
     s.add_argument("--workers", type=int, default=4)
     s.add_argument("--no-anonymize", action="store_true")
+    s.add_argument("--construction", choices=["rank", "judge"], default="rank",
+                   help="rank: long the top-k judge outlooks each week; judge: follow each BUY/HOLD/SELL")
+    s.add_argument("--top-k", type=int, default=3)
     s.add_argument("--run-id")
     s.add_argument("--yes", action="store_true")
     s.set_defaults(fn=cmd_backtest)

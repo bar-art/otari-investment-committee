@@ -41,7 +41,8 @@ with live:
 
         badge = {"BUY": "🟢", "SELL": "🔴", "HOLD": "⚪", "VETO": "⛔"}[d.final_action]
         st.subheader(f"{badge} {d.final_action}  ·  final weight {d.final_weight:.2%}")
-        st.write(f"**Judge:** {d.judge['action']} (conviction {d.judge['conviction']:.2f}, proposed "
+        st.write(f"**Judge:** {d.judge['action']} (outlook {d.judge.get('outlook', 0):+.1f} on -2..+2, "
+                 f"conviction {d.judge['conviction']:.2f}, proposed "
                  f"{d.judge['target_weight']:.1%}). {d.judge['thesis']}")
         if d.judge.get("what_would_change_my_mind"):
             st.caption(f"What would change my mind: {d.judge['what_would_change_my_mind']}")
@@ -112,6 +113,7 @@ with past:
             f = st.selectbox("Decision log", [x.name for x in files])
             rows = [json.loads(l) for l in (rd / f).read_text().splitlines()]
             df = pd.DataFrame([{"date": r["as_of"], "ticker": r["ticker"], "action": r["final_action"],
+                                "outlook": r["judge"].get("outlook"),
                                 "weight": r["final_weight"], "judge": r["judge"].get("thesis", "")[:120],
                                 "errors": len(r["errors"])} for r in rows])
             st.dataframe(df, width="stretch", hide_index=True)

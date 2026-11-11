@@ -61,7 +61,7 @@ def test_extract_json_handles_fences_and_prose():
 def test_schema_trims_long_lists():
     v = AnalystView.model_validate({"score": 1, "confidence": 0.5, "key_points": list("abcdef"), "cited_fields": []})
     assert len(v.key_points) == 4
-    assert JudgeDecision.model_validate({"action": "buy", "conviction": 0.5, "target_weight": 0.05,
+    assert JudgeDecision.model_validate({"action": "buy", "outlook": 1, "conviction": 0.5, "target_weight": 0.05,
                                          "thesis": "x"}).action == "BUY"
 
 
@@ -244,7 +244,7 @@ LLM = Profile(name="llm", description="", models={"analyst": "a", "debater": "b"
 def _answers(judge_action="BUY", risk_cap=0.02):
     view = GOOD
     turn = json.dumps({"arguments": ["x"], "rebuttal": "", "cited_fields": []})
-    judge = json.dumps({"action": judge_action, "conviction": 0.8, "target_weight": 0.08, "thesis": "t",
+    judge = json.dumps({"action": judge_action, "outlook": 1.5, "conviction": 0.8, "target_weight": 0.08, "thesis": "t",
                         "what_would_change_my_mind": "w"})
     risk = json.dumps({"max_weight": risk_cap, "concerns": ["c"]})
     return {"a": [view] * 3, "b": [turn, turn], "j": [judge], "r": [risk]}
@@ -285,3 +285,22 @@ def test_json_mode_is_dropped_for_models_that_refuse_it():
     assert _ask(client, ["m1"]).score == 1
     _ask(client, ["m1"])  # second call goes straight to plain mode
     assert sum("response_format" in c for c in calls) == 1
+
+
+def test_scoring_and_sizing_can_be_split():
+    c = Committee(RULES, FakeData())
+    d = c.decide("AAA", AS_OF, size=False)
+    assert d.risk == {} and "outlook" in d.judge
+    c.size(d, "BUY", 0.10)
+    assert d.risk["checks"] and 0 < d.final_weight <= RiskLimits().max_weight
+    c.size(d, "OUT", 0.0, current_weight=0.05)
+    assert d.final_weight == 0 and d.final_action == "OUT"
+    assert "_sizing" not in d.as_dict()
+
+
+def test_failed_judge_is_never_ranked_in():
+    ans = _answers()
+    ans["j"] = [RuntimeError("down")]
+    client, _ = make_client(ans)
+    d = Committee(LLM, FakeData(), client).decide("AAA", AS_OF, size=False)
+    assert d.judge["outlook"] == -2

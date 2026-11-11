@@ -31,6 +31,8 @@ class BacktestConfig:
     tc_bps: float = 5.0
     workers: int = 4
     anonymize: bool = True
+    construction: str = "rank"   # rank: long the top_k judge outlooks; judge: follow each BUY/HOLD/SELL
+    top_k: int = 3
 
 
 def rebalance_dates(days: pd.DatetimeIndex) -> list[pd.Timestamp]:
@@ -55,6 +57,9 @@ def perf_metrics(ret: pd.Series) -> dict:
 
 
 def signed_signal(d: Decision) -> float:
+    """The judge's outlook (-2..+2) when it gave one, else its signed conviction."""
+    if d.judge.get("outlook") is not None:
+        return float(d.judge["outlook"])
     c = d.judge.get("conviction", 0)
     return {"BUY": c, "SELL": -c}.get(d.final_action, 0.0)
 
@@ -101,11 +106,24 @@ class Backtester:
             if day in rdates:
                 dd = 1 - equity / peak
 
+                rank = cfg.construction == "rank"
+
                 def one(t, _w=w.copy(), _dd=dd):
-                    return committee.decide(t, day.date(), current_weight=float(_w[t]), portfolio_drawdown=_dd)
+                    return committee.decide(t, day.date(), current_weight=float(_w[t]), portfolio_drawdown=_dd,
+                                            size=not rank)
 
                 with ThreadPoolExecutor(max_workers=cfg.workers) as pool:
                     ds = list(pool.map(one, cfg.universe))
+                    if rank:  # score first, then size: long the best outlooks, out of the rest
+                        ranked = sorted(ds, key=lambda d: d.judge.get("outlook", -2), reverse=True)
+                        picks = {d.ticker for d in ranked[:cfg.top_k] if d.judge.get("outlook", -2) > 0}
+
+                        def sized(d, _w=w.copy(), _dd=dd):
+                            buy = d.ticker in picks
+                            return committee.size(d, "BUY" if buy else "OUT", self.limits.max_weight if buy else 0.0,
+                                                  float(_w[d.ticker]), _dd)
+
+                        ds = list(pool.map(sized, ds))
                 decisions += ds
                 target, notes = apply_portfolio_limits({d.ticker: d.final_weight for d in ds}, self.sectors,
                                                        self.limits)
@@ -151,7 +169,7 @@ class Backtester:
                 "ic_dates": len(ics),
                 "buy_hit_rate": float((buys["fwd_excess"] > 0).mean()) if len(buys) else np.nan,
                 "buy_avg_fwd_excess": float(buys["fwd_excess"].mean()) if len(buys) else np.nan,
-                "n_buy": int(len(buys)), "n_sell": int((df["action"] == "SELL").sum()),
+                "n_buy": int(len(buys)), "n_sell": int(df["action"].isin(["SELL", "OUT"]).sum()),
                 "n_veto": int((df["action"] == "VETO").sum())}
 
 

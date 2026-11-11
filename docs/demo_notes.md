@@ -30,7 +30,9 @@ Before recording:
 - **Activity / Sessions**: one session per decision, spend grouped by the `role` tag.
 
 ## 4. Does it work? (3:00–4:00), Streamlit tab "Backtest results"
-- Run `submission`: weekly decisions, Jul–Nov 2026, 12 large caps.
+- Run `submission-v2`: weekly decisions, Jul–Nov 2026, 12 large caps, long the top 3 judge outlooks.
+- v1 lesson: the judge held 227 of 228 times because the debate always conflicts. The fix was to split scoring from sizing.
+- 56 sandbox checks, all PASS. The risk officer cut every pick and vetoed CVX on suspicious data.
 - **Prompts anonymized**: no ticker, no date, so the model cannot recall the future.
 - Fundamentals come from **SEC filings cut at their filing date**.
 - Compare `open` with the **no-LLM rules baseline** on IC, hit rate and cost per decision.

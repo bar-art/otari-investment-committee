@@ -43,7 +43,8 @@ def write_report(run_dir: Path) -> Path:
     md = [f"# Backtest {meta['run_id']}",
           f"Universe: {', '.join(meta['universe'])}  \nWindow: {meta['start']} to {meta['end']}, weekly decisions, "
           f"one-day execution lag, {meta['tc_bps']} bps per unit of turnover, cash earns 0.  \n"
-          f"Prompts anonymized: {meta['anonymize']}.",
+          f"Prompts anonymized: {meta['anonymize']}. Construction: {meta.get('construction', 'judge')}"
+          + (f" (long the top {meta.get('top_k')} judge outlooks each week)" if meta.get('construction') == 'rank' else "") + ".",
           "## Performance", table(perf), ""]
     if committees and sig:
         md += ["## Signal quality (forward excess return over SPY to next rebalance)", table(sig, committees), ""]

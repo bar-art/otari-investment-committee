@@ -31,6 +31,8 @@ class DebateTurn(BaseModel):
 
 class JudgeDecision(BaseModel):
     action: Action
+    outlook: float = Field(ge=-2, le=2, description="expected performance vs a typical US large cap over "
+                                                    "the next month, -2 much worse ... +2 much better")
     conviction: float = Field(ge=0, le=1)
     target_weight: float = Field(ge=0, le=1, description="fraction of portfolio for BUY, else 0")
     thesis: Text
@@ -84,7 +86,9 @@ def judge_messages(label: str, views: dict, bull: list[str], bear: list[str], ma
     system = ("You are the portfolio manager chairing the committee. Weigh the analysts and the debate, "
               "then decide BUY (hold or add up to target_weight), HOLD (keep current weight) or SELL "
               f"(exit). Long-only. target_weight must be <= {max_weight:.2f}. Prefer HOLD when evidence "
-              f"conflicts. {GUARDRAIL}")
+              "conflicts. Separately, always give `outlook`: your best estimate of how this stock will do "
+              "versus a typical US large cap over the next month, even when you HOLD. The portfolio is built "
+              f"by ranking outlooks across stocks, so use the full scale. {GUARDRAIL}")
     user = (f"Stock: {label}\nCurrent portfolio weight: {current_weight:.3f}\n"
             f"Analyst views:\n{json.dumps(views, ensure_ascii=False, indent=1)}\n"
             f"Bull: {json.dumps(bull, ensure_ascii=False)}\nBear: {json.dumps(bear, ensure_ascii=False)}")
@@ -135,11 +139,12 @@ def rules_analyst(role: str, f: dict) -> AnalystView:
 def rules_judge(views: dict[str, AnalystView], max_weight: float, current_weight: float) -> JudgeDecision:
     w = {"fundamental": 0.4, "technical": 0.4, "events": 0.2}
     s = sum(w[k] * v.score for k, v in views.items())
+    o = round(_clip(s), 3)
     if s > 0.25:
-        return JudgeDecision(action="BUY", conviction=min(1, s / 2), target_weight=max_weight * min(1, s),
+        return JudgeDecision(action="BUY", outlook=o, conviction=min(1, s / 2), target_weight=max_weight * min(1, s),
                              thesis=f"weighted score {s:+.2f}", what_would_change_my_mind="score below 0")
     if s < -0.25:
-        return JudgeDecision(action="SELL", conviction=min(1, -s / 2), target_weight=0,
+        return JudgeDecision(action="SELL", outlook=o, conviction=min(1, -s / 2), target_weight=0,
                              thesis=f"weighted score {s:+.2f}", what_would_change_my_mind="score above 0")
-    return JudgeDecision(action="HOLD", conviction=0.2, target_weight=current_weight,
+    return JudgeDecision(action="HOLD", outlook=o, conviction=0.2, target_weight=current_weight,
                          thesis=f"weighted score {s:+.2f}", what_would_change_my_mind="|score| > 0.25")

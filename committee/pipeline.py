@@ -53,7 +53,7 @@ class Decision:
     otari: dict = field(default_factory=dict)   # which gateway features this decision used
 
     def as_dict(self):
-        return self.__dict__
+        return {k: v for k, v in self.__dict__.items() if not k.startswith("_")}
 
 
 def grounding_check(cited: list[str], inputs: dict) -> tuple[int, int]:
@@ -123,7 +123,7 @@ class Committee:
 
     # ----- decision -----
     def decide(self, ticker: str, as_of: date, current_weight: float = 0.0,
-               portfolio_drawdown: float = 0.0) -> Decision:
+               portfolio_drawdown: float = 0.0, size: bool = True) -> Decision:
         feats = self.build_features(ticker, as_of)
         metrics, sector, returns = feats.pop("_risk"), feats.pop("_sector"), feats.pop("_returns")
         d = Decision(ticker=ticker, as_of=as_of.isoformat(), profile=self.profile.name,
@@ -205,26 +205,43 @@ class Committee:
             except LLMError as exc:
                 d.errors.append(str(exc))
         if judge is None:
-            judge = JudgeDecision(action="HOLD", conviction=0, target_weight=current_weight,
+            # outlook -2 so a failed committee is never ranked into the portfolio
+            judge = JudgeDecision(action="HOLD", outlook=-2, conviction=0, target_weight=current_weight,
                                   thesis="committee failed: fail closed", what_would_change_my_mind="")
         d.judge = judge.model_dump()
 
-        # 4) risk: LLM officer may only cut, then the deterministic gate
+        # 4) risk sizing (the backtest can defer it to rank stocks across the universe first)
+        d._sizing = {"label": label, "metrics": metrics, "returns": returns}
+        if size:
+            self.size(d, judge.action, judge.target_weight, current_weight, portfolio_drawdown)
+        d.grounding = {"cited_ok": g_ok, "cited_unknown": g_bad}
+        d.features["sector"] = sector
+        return d
+
+    def size(self, d: Decision, action: str, proposed_weight: float, current_weight: float = 0.0,
+             portfolio_drawdown: float = 0.0) -> Decision:
+        """LLM risk officer (can only cut), deterministic gate, then the Otari sandbox check."""
+        ctx = d._sizing
+        metrics, returns, label = ctx["metrics"], ctx["returns"], ctx["label"]
+        llm = self.profile.uses_llm
+        cfg = self.client.settings if self.client else None
+        feats = d.features
         llm_cap = None
-        if llm and self.use_risk_officer and judge.action == "BUY":
+        if llm and self.use_risk_officer and action == "BUY":
             try:
-                s, u = risk_messages(label, d.judge, metrics.as_dict(), feats["events"])
+                proposal = {**d.judge, "action": action, "target_weight": proposed_weight}
+                s, u = risk_messages(label, proposal, metrics.as_dict(), feats["events"])
                 ro = self._ask("risk", s, u, RiskOfficerView, d)
                 llm_cap = ro.max_weight
                 d.risk_officer = ro.model_dump()
             except LLMError as exc:
                 d.errors.append(str(exc))
                 llm_cap = 0.0  # no risk sign-off, no new risk
-        rd = gate(judge.target_weight, judge.action, metrics, self.limits, current_weight=current_weight,
+        rd = gate(proposed_weight, action, metrics, self.limits, current_weight=current_weight,
                   portfolio_drawdown=portfolio_drawdown, event_red_flags=feats["events"].get("red_flags"),
                   fundamentals_age_days=feats["fundamental"].get("days_since_last_filing"), llm_cap=llm_cap)
         # independent recompute of VaR/ES in Otari's code sandbox; a mismatch vetoes the trade
-        if llm and cfg.code_check and judge.action == "BUY" and rd.final_weight > 0:
+        if llm and cfg.code_check and action == "BUY" and rd.final_weight > 0:
             try:
                 out = self.client.execute(SANDBOX_CODE.format(returns=json.dumps(returns)), **self._ctx("risk", d))
                 remote = json.loads(out.get("stdout", "").strip().splitlines()[-1])
@@ -240,7 +257,5 @@ class Committee:
                 rd.checks.append({"rule": "otari_sandbox_recompute", "status": "SKIP", "detail": str(exc)[:160]})
         d.risk = rd.as_dict()
         d.final_weight = rd.final_weight
-        d.final_action = judge.action if rd.approved else "VETO"
-        d.grounding = {"cited_ok": g_ok, "cited_unknown": g_bad}
-        d.features["sector"] = sector
+        d.final_action = action if rd.approved else "VETO"
         return d

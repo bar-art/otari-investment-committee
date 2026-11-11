@@ -15,7 +15,7 @@ uses **only open-weight models, from four labs, one per job**:
 | Risk officer | Qwen 3.8 Flash (Mistral Small 4) | can only cut size |
 
 A decision costs about **$0.004 in model calls** (6 calls, about 9k tokens, from Otari's inline
-`usage.cost_usd`). Live mode adds **$0.01 for the 8-K web fetch**, which the client reads back from
+`usage.cost_usd`). A BUY adds $0.01 for the sandbox VaR/ES check. Live mode adds **$0.01 for the 8-K web fetch**, which the client reads back from
 `GET /usage/requests/{id}`, so the ledger matches Otari's to the micro-dollar. Backtests are
 anonymized and skip the fetch.
 
@@ -114,31 +114,44 @@ LLM backtests usually leak the future. This one closes four leaks:
 - **Signal quality:** the cross-sectional rank IC between the committee's signed conviction and next-week excess return over SPY, with its t-stat, and the BUY hit rate.
 - **Cost and reliability:** LLM calls, dollars, cost per decision, failed calls, fallbacks, and how many cited input fields don't exist (a hallucination check).
 
-Run `submission`: 12 large caps, weekly, 2026-07-01 to 2026-11-06, anonymized prompts, 5 bps costs.
+12 large caps, weekly decisions from 2026-07-01 to 2026-11-06, anonymized prompts, one-day
+execution lag, 5 bps costs. The committee scores every stock, then the portfolio goes long the
+**top 3 judge outlooks** (outlook > 0). Each pick passes the LLM risk officer, the deterministic
+gate and the Otari sandbox check. The no-LLM baseline uses the same construction on its rules scores.
 
 | | SPY | Equal weight | committee: rules (no LLM) | committee: open (LLM) |
 |---|---|---|---|---|
-| Total return | -1.29% | 3.86% | -3.35% | -0.21% |
-| Max drawdown | -5.92% | -5.20% | -4.94% | -0.27% |
-| Average gross exposure | – | – | 48.0% | 1.9% |
-| Judge decisions (buy / hold / sell) | – | – | 147 / 61 / 20 | 1 / 227 / 0 |
-| IC of the mean analyst score (t-stat) | – | – | -0.049 (-0.66) | +0.038 (+0.57) |
-| LLM calls / failed / repaired | – | – | 0 | 1,370 / 0 / 0 |
-| Cost per decision | – | – | $0 | $0.0031 |
+| Total return | -1.29% | 3.86% | -1.86% | **+1.46%** |
+| Sharpe | -0.20 | 0.87 | -0.91 | **1.64** |
+| Max drawdown | -5.92% | -5.20% | -2.96% | **-0.85%** |
+| Average gross exposure | 100% | 100% | 24.6% | 15.0% |
+| BUY hit rate (beat SPY the next week) | – | – | 52.9% | **60.8%** |
+| IC of judge outlook (t-stat) | – | – | -0.04 (-0.48) | +0.04 (+0.44) |
+| LLM calls / failed | – | – | 0 | 1,481 / 0 |
+| Otari sandbox VaR/ES checks | – | – | – | 56 run, 56 PASS |
+| Cost per decision | – | – | $0 | $0.0046 |
 
 ![equity](docs/equity.png)
 
 What this says, honestly:
 
-- **The plumbing holds up.** 1,370 calls through Otari routing had no failures, no repairs and
-  no citations of input fields that don't exist. A full 228-decision run cost $0.72.
-- **The LLM analysts point the right way, but not significantly.** Their mean score has a
-  positive cross-sectional IC, while the rules baseline fed the same features has a negative
-  one. Neither is significant over 18 weeks.
-- **The debate makes the committee inert.** Bull and bear always produce conflicting evidence,
-  and the judge was told to prefer HOLD when evidence conflicts. So it held 227 of 228 times.
-  That is a real design lesson for adversarial-debate agents: the debate needs a decision rule
-  that does not reward indecision.
+- **The plumbing holds up.** 1,481 calls through Otari had no failures, no repairs, and no
+  citations of input fields that don't exist. The whole run cost $1.04: the judge $0.46,
+  sandbox checks $0.56 at $0.01 each, and the risk officer $0.03. The analysts and the debate
+  were cached from the first run.
+- **The LLM committee ranks a little better than rules on the same features**: a positive IC
+  and a 61% hit rate on its picks, against a negative IC and 53% for rules. It ran at low
+  exposure, because the LLM risk officer cut every pick (57 cuts, and one full veto on a stock
+  whose data it found implausible). **None of this is statistically significant**: an IC
+  t-stat of 0.44 over 18 weeks is noise-level. Read it as a working, auditable pipeline, not
+  as alpha.
+- **A design lesson along the way.** In the first run (`--construction judge`), the judge
+  followed its own BUY/HOLD/SELL, and its prompt said "prefer HOLD when evidence conflicts".
+  Bull and bear always produce conflicting evidence, so it held 227 of 228 times and the
+  portfolio stayed in cash (-0.21%, 1.9% average exposure). Separating *scoring* (an outlook
+  on every stock) from *sizing* (ranking and risk) fixed that. This is the standard quant
+  split, and the change was made for that reason, not tuned on returns. Both runs can be
+  reproduced with `--construction judge|rank`.
 
 ## Layout
 
