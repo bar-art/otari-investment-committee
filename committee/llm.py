@@ -174,6 +174,8 @@ class OtariClient:
                       extra_body=body, extra_headers={"Otari-Conversation-Id": conversation_id})
         if user:
             kwargs["user"] = user
+            if self.settings.end_user_budget:
+                kwargs["extra_headers"]["Otari-End-User-Budget"] = self.settings.end_user_budget
         if model not in self._no_json_mode:
             kwargs["response_format"] = {"type": "json_object"}
         try:
@@ -272,14 +274,18 @@ class OtariClient:
             payload = {**payload, "user": user}
         t0 = time.perf_counter()
         try:
-            r = requests.post(f"{self.settings.base_url}/{path}", json=payload, timeout=timeout,
-                              headers={"Authorization": f"Bearer {self.settings.key_for(role, user)}"})
+            headers = {"Authorization": f"Bearer {self.settings.key_for(role, user)}"}
+            if user and self.settings.end_user_budget:
+                headers["Otari-End-User-Budget"] = self.settings.end_user_budget
+            r = requests.post(f"{self.settings.base_url}/{path}", json=payload, timeout=timeout, headers=headers)
             rec.latency_ms = int((time.perf_counter() - t0) * 1000)
             rec.request_id = r.headers.get("Otari-Request-ID", "")
             if r.status_code >= 400:
                 raise LLMError(f"{path} {r.status_code} {r.headers.get('Otari-Error-Code', '')}: {r.text[:200]}")
             data = r.json()
             cost = (data.get("usage") or {}).get("cost_usd")
+            if cost is None and rec.request_id:  # fetch answers carry no cost: ask Otari's ledger
+                cost = self.billed_cost(rec.request_id, role, user)
             rec.cost_usd = float(cost) if cost is not None else None
             return data
         except Exception as exc:
@@ -287,6 +293,17 @@ class OtariClient:
             raise LLMError(rec.error) from exc
         finally:
             self.ledger.add(rec)
+
+    def billed_cost(self, request_id: str, role: str, user: str | None = None, tries: int = 4) -> float | None:
+        """What Otari billed for a request (GET /usage/requests/{id}); rows settle in the background."""
+        import requests
+        for i in range(tries):
+            r = requests.get(f"{self.settings.base_url}/usage/requests/{request_id}", timeout=20,
+                             headers={"Authorization": f"Bearer {self.settings.key_for(role, user)}"})
+            if r.ok and r.json().get("cost_usd") is not None:
+                return float(r.json()["cost_usd"])
+            time.sleep(0.5 * (i + 1))
+        return None
 
     def fetch(self, url: str, max_chars: int = 6000, **ctx) -> str:
         """Read a public page through Otari's web fetch (POST /fetch)."""

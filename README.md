@@ -14,8 +14,10 @@ uses **only open-weight models, from four labs, one per job**:
 | Judge / portfolio manager | DeepSeek V4 Pro (Kimi K3 Fast), tiering down to Qwen 3.8 Flash when its budget runs low | the one call that needs the most reasoning |
 | Risk officer | Qwen 3.8 Flash (Mistral Small 4) | can only cut size |
 
-A full decision costs about **$0.004** (6 calls, about 9k tokens), as measured from Otari's
-inline `usage.cost_usd`.
+A decision costs about **$0.004 in model calls** (6 calls, about 9k tokens, from Otari's inline
+`usage.cost_usd`). Live mode adds **$0.01 for the 8-K web fetch**, which the client reads back from
+`GET /usage/requests/{id}`, so the ledger matches Otari's to the micro-dollar. Backtests are
+anonymized and skip the fetch.
 
 ### Otari features used
 
@@ -24,7 +26,7 @@ inline `usage.cost_usd`.
 | Model routing and fallbacks | `profiles.toml` profile `otari` calls the routing policies `committee-analyst`, `committee-debater`, `committee-judge` and `committee-risk`, each with `on_failure` candidates. The client adds a second chain after the gateway's | `Otari-Fallback` and `Otari-Attempt-Count` are logged per call (`attempts`, `fallback` columns) |
 | Multiple models serving distinct roles | four open-weight models from four labs, above | ledger `served_model` per role |
 | Budgets and spending limits | one virtual key per agent (`OTARI_API_KEY_<ROLE>`), each with its own budget. `GET /key/budget` runs before the judge: below `JUDGE_BUDGET_FLOOR_USD` the judge **tiers down** to the economy model. At the cap, `403 budget_exceeded` makes the decision fail closed | `decision.otari.judge_budget_left_usd`, `judge_tiered_down_to` |
-| Per-user budgets | a service key bills each decision to an end user (`user: desk:alice`), each on its own end-user budget. CLI `--user`, or the "Bill to" box in the UI | ledger `end_user` column; Otari End users page |
+| Per-user budgets | a service key bills each decision to an end user (`user: desk:alice`). New end users start on the budget named in `Otari-End-User-Budget` (`OTARI_END_USER_BUDGET`). CLI `--user`, or the "Bill to" box in the UI | ledger `end_user` column; Otari End users page |
 | Code execution | before any BUY, the risk gate re-computes historical VaR and ES in Otari's sandbox (`POST /code/execute`), with no model involved. A mismatch with the local numbers vetoes the trade | risk check `otari_sandbox_recompute` |
 | Web fetch | in live mode the events analyst reads the latest 8-K filing through `POST /fetch` | `decision.otari.web_fetch` |
 | Guardrails | the events analyst sees untrusted text (8-K body, headlines), so its request carries a `prompt-injection` guardrail in block mode. A flagged request is dropped and the committee goes on without that view | `Otari-Guardrails` verdicts in the ledger |

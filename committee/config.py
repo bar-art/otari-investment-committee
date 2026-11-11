@@ -40,6 +40,7 @@ class OtariSettings:
     default_key: str = os.getenv("OTARI_API_KEY", "")
     # A service key bills each request to an end user (`user` field) with its own budget.
     service_key: str = os.getenv("OTARI_SERVICE_KEY", "")
+    end_user_budget: str = os.getenv("OTARI_END_USER_BUDGET", "")  # budget id new end users start on
     timeout_s: float = float(os.getenv("OTARI_TIMEOUT_S", "90"))
     web_fetch: bool = _flag("OTARI_WEB_FETCH")             # read 8-K text through POST /fetch
     code_check: bool = _flag("OTARI_CODE_CHECK", "1")      # recompute VaR/ES in Otari's sandbox
