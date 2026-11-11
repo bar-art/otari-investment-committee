@@ -139,8 +139,9 @@ class Committee:
             url = self._latest_8k_url(ticker, as_of)
             if url:
                 try:
-                    text = self.client.fetch(url, max_chars=5000, **self._ctx("events", d))
-                    feats["events"]["latest_8k_excerpt"] = text[:5000]
+                    text = self.client.fetch(url, max_chars=12000, **self._ctx("events", d))
+                    body = text.find("Item ")  # skip the cover page
+                    feats["events"]["latest_8k_excerpt"] = text[body if body > 0 else 0:][:5000]
                     d.otari["web_fetch"] = url
                 except LLMError as exc:
                     d.errors.append(f"web fetch: {exc}")
